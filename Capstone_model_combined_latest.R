@@ -642,6 +642,23 @@ conf
 #Sensitivity : 0.62217       
 #Specificity : 0.61549
 
+#for cutoff 0.0485
+#Sensitivity :0.5723981900
+#Specificity :0.6561892902
+#Accuracy :0.6526551839
+
+library(ROCR)
+#on testing  data
+pred_object_test<- prediction(test_cutoff_churn, test_actual_churn)
+
+performance_measures_test<- performance(pred, "tpr", "fpr")
+
+ks_table_test <- attr(performance_measures_test, "y.values")[[1]] - 
+  (attr(performance_measures_test, "x.values")[[1]])
+
+max(ks_table_test)
+#0.2535332999
+
 #--------------------------------------------------------- 
 #Let's use K fold validation with logistic regression
 
@@ -721,14 +738,11 @@ legend(0,.50,col=c(2,"darkgreen",4,"darkred"),lwd=c(2,2,2,2),c("Sensitivity","Sp
 
 cutoff_cv <- s[which(abs(OUT_cv[,1]-OUT_cv[,2])<0.12)]
 
-# Let's use the probability cutoff of 4.5%.
+
+# Let's use the probability cutoff of 4.95%.
 
 predicted_response_cv <- factor(ifelse(predictions_logit_cv[,2] >= 0.0495, 'yes', 'no'))
-summary(predicted_response_cv)
-levels(predicted_response_cv)
 # Creating confusion matrix for identifying the model evaluation.
-length(test$Perf.Tag)
-length(predicted_response_cv)
 conf_cv <- confusionMatrix(predicted_response_cv, test$Perf.Tag, positive = 'yes')
 
 conf_cv
@@ -878,15 +892,89 @@ legend(0,.50,col=c(2,"darkgreen",4,"darkred"),lwd=c(2,2,2,2),c("Sensitivity","Sp
 cutoff_cv <- s[which(abs(OUT_rf_cv[,1]-OUT_rf_cv[,2])<0.12)]
 
 
-# Predicting probabilities of responding for the whole dataset
+#--------------------------------------------------------- 
+#Let's use neural network
+library(neuralnet)
+library(nnet)
+library(NeuralNetTools)
+library(e1071)
+library(keras)
+
+normalize <- function(x) {
+  return((x - min(x)) / (max(x) - min(x)))
+}
+
+train$Perf.Tag <- as.factor(train$Perf.Tag)
+test$Perf.Tag <- as.factor(test$Perf.Tag)
+str(train)
+
+train_num_norm <- as.data.frame(lapply(train[,2:21], normalize ))
+test_num_norm <- as.data.frame(lapply(test[,2:21], normalize ))
+
+train_num_norm$Perf.Tag <- as.factor(ifelse(train$Perf.Tag == 'yes', 1, 0))
+test_num_norm$Perf.Tag <- as.factor(ifelse(test$Perf.Tag == 'yes', 1, 0))
+
+# build the neural network (NN) formula
+a <- colnames(train[,2:21])
+mformula <- as.formula(paste('Perf.Tag ~ ' , paste(a,collapse='+')))
+
+set.seed(1234567890)
+train_nn <- train_num_norm
+test_nn <- test_num_norm
+str(train_nn)
+
+# Building the model 
+m8 <- nnet(Perf.Tag~., data=train_nn,size=20,maxit=10000,decay=.001, linout=F, trace = F)
+
+table(test_nn$Perf.Tag,predict(m8,newdata=test_nn, type="class"))
+
+m8_pred <- prediction(predict(m8, newdata=test_nn, type="raw"),test_nn$Perf.Tag)
+m8_perf <- performance(m8_pred,"tpr","fpr")
+nn_pred <- predict(m8, test_nn, type = "raw")
+summary(nn_pred)
+
+library(ROCR)
+# Model Evaluation ...............#
+pred_nn <- ROCR::prediction(nn_pred,test_nn$Perf.Tag)
+eva_log<-performance(pred_nn,"sens","spec")
+evaA_log<-performance(pred_nn,'acc')
+plot(evaA_log)
+
+sensitivity <- eva_log@y.values[[1]]
+cutoff <- eva_log@alpha.values[[1]]
+specificity<- eva_log@x.values[[1]]
+accuracy<-evaA_log@y.values[[1]]
+plot(cutoff,sensitivity,col="red")
+lines(cutoff,specificity,col="green")
+lines(cutoff,accuracy,col="blue")
+legend("bottomright", legend=c("sensitivity","accuracy","specificity"),
+       col=c("red","blue","green"), lty=1:2, cex=0.8)
+
+abline(v =0.5)
+matrix<-data.frame(cbind(sensitivity,specificity,accuracy,cutoff))
+
+final_matrix<-matrix[which(matrix$cutoff>0.01&matrix$cutoff<1),]
+# Let's use the probability cutoff of 3.5%.
+
+predicted_response_nn <- factor(ifelse(nn_pred >= 0.035, '1', '0'))
+summary(predicted_response_nn)
+levels(predicted_response_nn)
+# Creating confusion matrix for identifying the model evaluation.
+conf_nn <- confusionMatrix(predicted_response_nn, test_nn$Perf.Tag, positive = '1')
+
+conf_nn
+
+#Results of neural network
+#Sensitivity : 0.58257919
+#Specificity : 0.59133250 
+#Accuracy : 0.5909633
+
+# Predicting probabilities of responding for the whole dataset using logistic regression model
 
 predictions_logit <- predict(logistic_final, newdata = data_woe, type = "response")
 summary(predictions_logit)
 
 predicted_response <- factor(ifelse(predictions_logit >= 0.045, 'yes', 'no'))
-summary(predicted_response)
-levels(predicted_response)
-test$Changed.Perf.Tag <- as.factor(test$Changed.Perf.Tag)
 # Creating confusion matrix for identifying the model evaluation.
 library(dplyr)
 
@@ -903,6 +991,10 @@ sc = scorecard_ply( Merged_Data, my_card )
 final <- cbind(final, sc)
 summary(final$predicted_response)
 final_sorted <-  final[order(-predictions_logit, -score),]
-final_sorted <- filter(final_sorted, final_sorted$predicted_response == 'no')
+final_sorted_no <- filter(final_sorted, final_sorted$predicted_response == 'no')
+final_sorted_yes <- filter(final_sorted, final_sorted$predicted_response == 'yes')
 str(final)
-summary(final_sorted$score)
+summary(final_sorted_yes$score) #529-555
+summary(final_sorted_no$score) #554-595
+
+#score cutoff should be around 555
