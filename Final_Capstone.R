@@ -125,7 +125,7 @@ median(CB_Data$Avgas.CC.Utilization.in.last.12.months,na.rm = T)
 #Limited or Few outliers - Median number of avg credit card usage - 15
 
 boxplot(CB_Data$No.of.trades.opened.in.last.6.months)
-median(CB_Data_NoWoe$No.of.trades.opened.in.last.6.months,na.rm = T)
+median(CB_Data$No.of.trades.opened.in.last.6.months,na.rm = T)
 #Outliers are present - Median No.of.trades.opened.in.last.6.months - 2
 
 boxplot(CB_Data$No.of.times.90.DPD.or.worse.in.last.12.months)
@@ -601,14 +601,6 @@ str(Merged_Data)
 Merged_Data <- Merged_Data[,-c(12)]
 colnames(Merged_Data)[29]<- "Perf.Tag"
 
-numdata <- sapply(Merged_Data,is.numeric)
-corrdata <- cor(Merged_Data[,numdata])
-
-library(corrplot)
-#Plotting the data after correlation
-corrplot(corrdata, type = "full",tl.pos = "dt",method = "circle", tl.cex = 0.5, 
-         tl.col = 'Blue', order = "hclust", diag = TRUE)
-
 # Weight Of Evidence Analaysis (WOE) and Information Value (IV)
 
 
@@ -759,6 +751,7 @@ str(df.with.binned.vars.added)
 
 #--Keeping only woe values
 data_woe <- df.with.binned.vars.added[,-c(30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62)]
+str(data_woe)
 data_woe$No.of.PL.trades.opened.in.last.12.months <- data_woe$woe.No.of.PL.trades.opened.in.last.12.months.binned
 data_woe$No.of.Inquiries.in.last.12.months..excluding.home...auto.loans. <- data_woe$woe.No.of.Inquiries.in.last.12.months..excluding.home...auto.loans..binned
 data_woe$No.of.trades.opened.in.last.12.months <- data_woe$woe.No.of.trades.opened.in.last.12.months.binned
@@ -786,6 +779,14 @@ library(tidyverse)
 
 #--check NA values
 colSums(is.na(data_woe))
+
+numdata <- sapply(data_woe,is.numeric)
+corrdata <- cor(data_woe[,numdata])
+
+library(corrplot)
+#Plotting the data after correlation
+corrplot(corrdata, type = "full",tl.pos = "dt",method = "circle", tl.cex = 0.5, 
+         tl.col = 'Blue', order = "hclust", diag = TRUE)
 
 # Split the data into train and test data
 
@@ -886,7 +887,7 @@ summary(predictions_logit)
 
 ## Model Evaluation: Logistic Regression
 
-# Let's use the probability cutoff of 5%.
+# Let's use the probability cutoff of 45%.
 
 predicted_response <- factor(ifelse(predictions_logit >= 0.45, 'yes', 'no'))
 summary(predicted_response)
@@ -896,6 +897,8 @@ summary(predicted_response)
 conf <- confusionMatrix(predicted_response, test$Perf.Tag, positive = 'yes')
 
 conf
+
+#Sensitivity is low, Tuning the parameters
 
 library(ROCR)
 
@@ -919,9 +922,9 @@ matrix<-data.frame(cbind(sensitivity,specificity,accuracy,cutoff))
 
 final_matrix<-matrix[which(matrix$cutoff>0.01&matrix$cutoff<1),]
 
-#The plot shows optimal cutoff at 0.519
+#The plot shows optimal cutoff at 0.52
 
-# Let's use the probability cutoff of 51.9%.
+# Let's use the probability cutoff of 52%.
 
 predicted_response <- factor(ifelse(predictions_logit >= 0.52,'yes', 'no'))
 summary(predicted_response)
@@ -937,10 +940,15 @@ conf
 #Sensitivity : 0.61991       
 #Specificity : 0.63118
 
+#KS Statistics and ROC Curve
+
 library(ROCR)
 #on testing  data
 
 performance_measures_test<- performance(pred, "tpr", "fpr")
+
+#ROC Curve
+plot(performance_measures_test, colorize = TRUE, text.adj = c(-0.2,1.7))
 
 ks_table_test <- attr(performance_measures_test, "y.values")[[1]] - 
   (attr(performance_measures_test, "x.values")[[1]])
@@ -966,15 +974,13 @@ getDoParName()
 # Define train control for k fold cross validation
 ctrl <- trainControl(method="cv", number=10)
 # Fit Logistic Regression Model
-model <- train(Perf.Tag ~ 
-                 woe.No.of.Inquiries.in.last.12.months..excluding.home...auto.loans..binned + 
-                 woe.Avgas.CC.Utilization.in.last.12.months.binned +
-                 woe.No.of.times.30.DPD.or.worse.in.last.12.months.binned + 
-                 woe.No.of.PL.trades.opened.in.last.6.months.binned + woe.No.of.times.90.DPD.or.worse.in.last.12.months.binned +
-                 woe.No.of.Inquiries.in.last.6.months..excluding.home...auto.loans..binned + 
-                 woe.No.of.trades.opened.in.last.6.months.binned + 
-                 woe.No.of.months.in.current.residence.binned + woe.Income.binned + 
-                 woe.No.of.months.in.current.company.binned ,  data=train, method="glm", family=binomial(),
+model <- train(Perf.Tag ~ Income + No.of.months.in.current.residence + 
+                 No.of.months.in.current.company + 
+                 No.of.times.90.DPD.or.worse.in.last.12.months + 
+                 No.of.times.60.DPD.or.worse.in.last.12.months + No.of.times.30.DPD.or.worse.in.last.12.months + 
+                 Avgas.CC.Utilization.in.last.12.months + No.of.trades.opened.in.last.6.months + 
+                 No.of.PL.trades.opened.in.last.12.months + 
+                 No.of.Inquiries.in.last.12.months..excluding.home...auto.loans. ,  data=train, method="glm", family=binomial(),
                  trControl = ctrl)
 # Summarise Results
 print(model)
@@ -1034,7 +1040,7 @@ legend(0,.50,col=c(2,"darkgreen",4,"darkred"),lwd=c(2,2,2,2),c("Sensitivity","Sp
 cutoff_cv <- s[which(abs(OUT_cv[,1]-OUT_cv[,2])<0.01)]
 
 
-# Let's use the probability cutoff of 4.95%.
+# Let's use the probability cutoff of 51.4%.
 
 predicted_response_cv <- factor(ifelse(predictions_logit_cv[,2] >= 0.5148, 'yes', 'no'))
 # Creating confusion matrix for identifying the model evaluation.
@@ -1047,20 +1053,11 @@ conf_cv
 #Accuracy : 0.6179
 
 #--------------------------------------------------------- 
-#Let's use randomforest with logistic regression final model variables
+#Let's use randomforest
 library(randomForest)
 
 # Building the model 
-random_rf <- randomForest(Perf.Tag ~ 
-                            woe.No.of.Inquiries.in.last.12.months..excluding.home...auto.loans..binned + 
-                            woe.No.of.trades.opened.in.last.12.months.binned + woe.Avgas.CC.Utilization.in.last.12.months.binned + 
-                            woe.No.of.times.30.DPD.or.worse.in.last.6.months.binned + 
-                            woe.No.of.times.30.DPD.or.worse.in.last.12.months.binned + 
-                            woe.No.of.PL.trades.opened.in.last.6.months.binned + woe.No.of.times.90.DPD.or.worse.in.last.12.months.binned +
-                            woe.No.of.Inquiries.in.last.6.months..excluding.home...auto.loans..binned + 
-                            woe.No.of.trades.opened.in.last.6.months.binned + 
-                            woe.No.of.months.in.current.residence.binned + woe.Income.binned + 
-                            woe.No.of.months.in.current.company.binned, data = train, proximity = F, do.trace = F, mtry = 5)
+random_rf <- randomForest(Perf.Tag ~ ., data = train, proximity = F, do.trace = F, mtry = 5)
 rf_pred <- predict(random_rf, test, type = "prob")
 summary(rf_pred)
 summary(random_rf)
@@ -1114,12 +1111,12 @@ box()
 
 legend(0,.50,col=c(2,"darkgreen",4,"darkred"),lwd=c(2,2,2,2),c("Sensitivity","Specificity","Accuracy"))
 
-cutoff_rf <- s[which(abs(OUT_rf[,1]-OUT_rf[,2])<0.02)]
+cutoff_rf <- s[which(abs(OUT_rf[,1]-OUT_rf[,2])<0.01)]
 
 
 # Let's use the probability cutoff of 42.57%.
 
-predicted_response_rf <- factor(ifelse(rf_pred[,2] >= 0.4257, 'yes', 'no'))
+predicted_response_rf <- factor(ifelse(rf_pred[,2] >= 0.2475, 'yes', 'no'))
 # Creating confusion matrix for identifying the model evaluation.
 conf_rf <- confusionMatrix(predicted_response_rf, test$Perf.Tag, positive = 'yes')
 
@@ -1146,8 +1143,8 @@ train$Perf.Tag <- as.factor(train$Perf.Tag)
 test$Perf.Tag <- as.factor(test$Perf.Tag)
 str(train)
 
-train_num_norm <- as.data.frame(lapply(train[,2:18], normalize ))
-test_num_norm <- as.data.frame(lapply(test[,2:18], normalize ))
+train_num_norm <- as.data.frame(lapply(train[,1:17], normalize ))
+test_num_norm <- as.data.frame(lapply(test[,1:17], normalize ))
 
 train_num_norm$Perf.Tag <- as.factor(ifelse(train$Perf.Tag == 'yes', 1, 0))
 test_num_norm$Perf.Tag <- as.factor(ifelse(test$Perf.Tag == 'yes', 1, 0))
@@ -1164,6 +1161,7 @@ m8 <- nnet(Perf.Tag~., data=train_nn,size=20,maxit=10000,decay=.001, linout=F, t
 table(test_nn$Perf.Tag,predict(m8,newdata=test_nn, type="class"))
 nn_pred <- predict(m8, test_nn, type = "raw")
 summary(nn_pred)
+
 
 library(ROCR)
 # Model Evaluation ...............#
@@ -1188,7 +1186,7 @@ matrix<-data.frame(cbind(sensitivity,specificity,accuracy,cutoff))
 final_matrix<-matrix[which(matrix$cutoff>0.01&matrix$cutoff<1),]
 # Let's use the probability cutoff of 99%.
 
-predicted_response_nn <- factor(ifelse(nn_pred >= 0.99, '1', '0'))
+predicted_response_nn <- factor(ifelse(nn_pred >= 0.997, '1', '0'))
 summary(predicted_response_nn)
 levels(predicted_response_nn)
 # Creating confusion matrix for identifying the model evaluation.
@@ -1200,7 +1198,64 @@ conf_nn
 
 #Accuracy : 0.43
 
-#--------------------------------------------------------------------
+#---------------------------------------------------------------------------------------
+# Choosing the final model as logistic regression model after comparing with all others
+#---------------------------------------------------------------------------------------
+
+test_pred = predict(logistic_final, type = "response", 
+                    newdata = test)
+####################################################################
+# Lift & Gain Chart 
+
+# Loading dplyr package 
+library(dplyr)
+
+lift <- function(labels , predicted_prob,groups=10) {
+  
+  if(is.factor(labels)) labels  <- as.integer(as.character(labels ))
+  if(is.factor(predicted_prob)) predicted_prob <- as.integer(as.character(predicted_prob))
+  helper = data.frame(cbind(labels , predicted_prob))
+  helper[,"bucket"] = ntile(-helper[,"predicted_prob"], groups)
+  gaintable = helper %>% group_by(bucket)  %>%
+    summarise_at(vars(labels ), funs(total = n(),
+                                     totalresp=sum(., na.rm = TRUE))) %>%
+    
+    mutate(Cumresp = cumsum(totalresp),
+           Gain=Cumresp/sum(totalresp)*100,
+           Cumlift=Gain/(bucket*(100/groups))) 
+  return(gaintable)
+}
+levels(test$Perf.Tag)
+test_actual <- as.factor(ifelse(test$Perf.Tag=="yes",1,0))
+levels(test_actual)
+Default_decile = lift(test_actual, test_pred, groups = 10)
+Default_decile
+
+Gain <- c(0,Default_decile$Gain)
+Deciles <- c(0,Default_decile$bucket)
+plot(y=Gain,x=Deciles,type ="l",lwd = 2,xlab="Bucket",ylab="Gain",main = "Gain Chart")
+
+Random_Gain <- seq(from=0,to=100,by=10)
+lines(y=Random_Gain,x=Deciles,type ="l",lwd = 2, col="red")
+
+Perfect_Gain <- vector(mode = "numeric", length = 11)
+for (i in 2:11){Perfect_Gain[i] <- 100*min(1,129*(i-1)/209)}
+lines(y=Perfect_Gain,x=Deciles,type ="l",lwd = 2, col="darkgreen")
+
+
+
+legend("bottomright",col=c("darkgreen","black","red"),lwd =c(2,2,2,2),c("Perfect Model","Actual Model","Random Model"), cex = 0.7)
+
+# plotting the lift chart
+Lift <- Gain/Random_Gain
+Random_Lift <- Random_Gain/Random_Gain
+
+plot(y=Lift,x=Deciles,type ="l",ylim=c(0,3.5),lwd = 2,xlab="Bucket",ylab="Lift",main = "Lift Chart",ylim<-c())
+lines(y=Random_Lift,x=Deciles,type ="l",lwd = 2, col="red")
+
+legend("topright",col=c("black","red"),lwd =c(2,2,2),c("Actual Model","Random Model"), cex = 0.7)
+
+#-----------------------------------------------------------------------
 #Evaluating final logistic regression model on rejected population
 #Merging demographic and credit bureau rejected data
 
@@ -1321,3 +1376,16 @@ Merged_default <- filter(score_card_df, score_card_df$application_score_card < 3
 summary_profit <- sum(Merged_default$Outstanding.Balance, na.rm = TRUE)
 summary_profit
 #Profit is #2338483691 units to the bank
+
+#Let's find the applicants which did not default and our model suggested otherwise
+
+Merged_nodefault <- filter(score_card_df, score_card_df$application_score_card < 331.25, score_card_df$Perf.Tag == 0)
+potential_business_loss <- sum(Merged_nodefault$Outstanding.Balance, na.rm = TRUE)
+nrow(Merged_nodefault)
+potential_business_loss
+# So bank will lose around 24701 customers with this model with outstanding balance 31147809012
+# Assuming 4% earnings on these customers potential revenue loss is calculated below
+potential_revenue_loss <- 0.04*potential_business_loss
+potential_revenue_loss
+
+# so profit 2338483691 units is much greater than potenial loss 1245912360 units.
